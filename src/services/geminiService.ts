@@ -6,7 +6,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { SYMPTOMS_A, SYMPTOMS_B } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
 
 // Gemma 4 model variants available via Gemini API:
 //   "gemma-4-26b-a4b-it"  — 26B Mixture-of-Experts (fast, efficient) ✅ default
