@@ -20,6 +20,7 @@ import {
 import { RiskLevel, PatientData, AssessmentResult, SYMPTOMS_A, SYMPTOMS_B } from "./types";
 import { calculateRisk } from "./lib/assessmentLogic";
 import { parsePatientDescription } from "./services/geminiService";
+import { ThinkingPanel } from "./components/ThinkingPanel";
 import { RiskCard } from "./components/RiskCard";
 import { Language, translations, symptomTranslations } from "./constants/translations";
 
@@ -39,6 +40,8 @@ export default function App() {
   });
   const [result, setResult] = useState<AssessmentResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [thinking, setThinking] = useState("");
+  const [isThinking, setIsThinking] = useState(false);
   const [mode, setMode] = useState<"description" | "form">("description");
 
   const symptomsWithLablesA = useMemo(() => (SYMPTOMS_A || []).map(s => ({ ...s, label: (st as any)?.[s.id] || s.label })), [st]);
@@ -61,7 +64,12 @@ export default function App() {
   const handleAIScan = async () => {
     if (!description.trim()) return;
     setLoading(true);
-    const parsed = await parsePatientDescription(description);
+    setThinking("");
+    setIsThinking(true);
+    const parsed = await parsePatientDescription(description, (thought) => {
+      setThinking(thought);
+    });
+    setIsThinking(false);
     if (parsed) {
       const newData = {
         gestationalWeeks: parsed.gestationalWeeks || undefined,
@@ -89,6 +97,8 @@ export default function App() {
     });
     setResult(null);
     setDescription("");
+    setThinking("");
+    setIsThinking(false);
     setMode("description");
   };
 
@@ -198,6 +208,7 @@ export default function App() {
                         "{t.instructionText}"
                       </p>
                     </div>
+                    <ThinkingPanel thinking={thinking} isThinking={isThinking} />
                   </div>
                 ) : (
                   <div className="bg-white p-8 md:p-10 border border-ink/10 shadow-sm space-y-10">

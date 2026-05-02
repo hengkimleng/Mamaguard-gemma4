@@ -13,29 +13,43 @@ const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
 //   "gemma-4-31b-it"      — 31B Dense (highest accuracy)
 const GEMMA_MODEL = "gemma-4-26b-a4b-it";
 
-export async function parsePatientDescription(description: string) {
-  const prompt = `
-    Analyze the following description of a pregnant patient provided by a community health worker.
-    Identify the gestational weeks, age, if it's her first pregnancy, history of complications, and any symptoms mentioned.
-    
-    Symptoms to look for (Group A): ${SYMPTOMS_A.map(s => s.label).join(', ')}
-    Symptoms to look for (Group B): ${SYMPTOMS_B.map(s => s.label).join(', ')}
+export interface ParseResult {
+  gestationalWeeks: number | null;
+  age: number | null;
+  isFirstPregnancy: boolean | null;
+  historyOfComplications: boolean | null;
+  detectedSymptoms: string[];
+  gutConcern: boolean;
+  thinking?: string;
+}
 
-    Return a JSON object matching the following structure:
-    {
-      "gestationalWeeks": number | null,
-      "age": number | null,
-      "isFirstPregnancy": boolean | null,
-      "historyOfComplications": boolean | null,
-      "detectedSymptoms": string[] (IDs of symptoms from the provided lists),
-      "gutConcern": boolean (if CHW sounds worried or uncertain)
-    }
+export async function parsePatientDescription(
+  description: string,
+  onThinking?: (thought: string) => void
+): Promise<ParseResult | null> {
+  const prompt = `You are a clinical AI assistant helping community health workers in rural Cambodia triage pregnant patients. Apply WHO maternal health guidelines carefully.
 
-    Lists of symptom IDs:
-    Group A IDs: ${SYMPTOMS_A.map(s => s.id).join(', ')}
-    Group B IDs: ${SYMPTOMS_B.map(s => s.id).join(', ')}
+Analyze the following description of a pregnant patient provided by a community health worker.
+Identify the gestational weeks, age, if it's her first pregnancy, history of complications, and any symptoms mentioned.
 
-    Description: "${description}"
+Symptoms to look for (Group A - DANGER SIGNS requiring immediate referral): ${SYMPTOMS_A.map(s => s.label).join(', ')}
+Symptoms to look for (Group B - WARNING SIGNS requiring monitoring): ${SYMPTOMS_B.map(s => s.label).join(', ')}
+
+Return a JSON object matching the following structure:
+{
+  "gestationalWeeks": number | null,
+  "age": number | null,
+  "isFirstPregnancy": boolean | null,
+  "historyOfComplications": boolean | null,
+  "detectedSymptoms": string[] (IDs of symptoms from the provided lists),
+  "gutConcern": boolean (if CHW sounds worried or uncertain)
+}
+
+Lists of symptom IDs:
+Group A IDs: ${SYMPTOMS_A.map(s => s.id).join(', ')}
+Group B IDs: ${SYMPTOMS_B.map(s => s.id).join(', ')}
+
+Description: "${description}"
   `;
 
   try {
@@ -43,6 +57,7 @@ export async function parsePatientDescription(description: string) {
       model: GEMMA_MODEL,
       contents: prompt,
       config: {
+        thinkingConfig: { thinkingBudget: 1024 },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -59,7 +74,20 @@ export async function parsePatientDescription(description: string) {
       }
     });
 
-    return JSON.parse(response.text);
+    // Capture Gemma 4 thinking tokens
+    let thinkingContent = "";
+    if (response.candidates?.[0]?.content?.parts) {
+      for (const part of response.candidates[0].content.parts) {
+        if ((part as any).thought) {
+          thinkingContent = (part as any).thought;
+          onThinking?.(thinkingContent);
+        }
+      }
+    }
+
+    const result = JSON.parse(response.text);
+    return { ...result, thinking: thinkingContent };
+
   } catch (error) {
     console.error("Error parsing description with Gemma 4:", error);
     return null;
